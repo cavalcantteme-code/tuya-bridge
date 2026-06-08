@@ -1,11 +1,6 @@
-import hashlib
-import hmac
-import json
 import os
-import time
-
-import requests
 from flask import Flask, jsonify, request
+from tuya_connector import TuyaOpenAPI
 
 app = Flask(__name__)
 
@@ -15,51 +10,10 @@ DEVICE_ID     = os.environ["TUYA_DEVICE_ID"]
 ENDPOINT      = os.environ.get("TUYA_ENDPOINT", "https://openapi.tuyaus.com")
 WEBHOOK_TOKEN = os.environ["WEBHOOK_TOKEN"]
 
-def _sign(secret, msg):
-    return hmac.new(
-        secret.encode("utf-8"),
-        msg.encode("utf-8"),
-        hashlib.sha256
-    ).hexdigest().upper()
-
-def get_token():
-    t = str(int(time.time() * 1000))
-    path = "/v1.0/token?grant_type=1"
-    string_to_sign = ACCESS_ID + t + "GET\n\n\n\n" + path
-    sign = _sign(ACCESS_SECRET, string_to_sign)
-    headers = {
-        "client_id": ACCESS_ID,
-        "sign": sign,
-        "t": t,
-        "sign_method": "HMAC-SHA256"
-    }
-    r = requests.get(f"{ENDPOINT}{path}", headers=headers, timeout=8)
-    data = r.json()
-    print("TUYA TOKEN RESPONSE:", data)
-    if not data.get("success"):
-        raise RuntimeError(f"Token error: {data}")
-    return data["result"]["access_token"]
-
-def control_device(token, state):
-    t = str(int(time.time() * 1000))
-    path = f"/v1.0/devices/{DEVICE_ID}/commands"
-    body = json.dumps({"commands": [{"code": "switch_1", "value": state}]})
-    h = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    string_to_sign = (ACCESS_ID + token + t +
-                      "POST\n" + h + "\napplication/json\n\n" + path)
-    sign = _sign(ACCESS_SECRET, string_to_sign)
-    headers = {
-        "client_id": ACCESS_ID,
-        "access_token": token,
-        "sign": sign,
-        "t": t,
-        "sign_method": "HMAC-SHA256",
-        "Content-Type": "application/json"
-    }
-    r = requests.post(f"{ENDPOINT}{path}", headers=headers, data=body, timeout=8)
-    data = r.json()
-    print("TUYA CONTROL RESPONSE:", data)
-    return data
+def get_api():
+    openapi = TuyaOpenAPI(ENDPOINT, ACCESS_ID, ACCESS_SECRET)
+    openapi.connect()
+    return openapi
 
 @app.route("/plug/<action>", methods=["POST"])
 def plug_control(action):
@@ -68,8 +22,10 @@ def plug_control(action):
     if action not in ("on", "off"):
         return jsonify({"error": "use /on ou /off"}), 400
     try:
-        token = get_token()
-        result = control_device(token, action == "on")
+        openapi = get_api()
+        commands = {"commands": [{"code": "switch_1", "value": action == "on"}]}
+        result = openapi.post(f"/v1.0/devices/{DEVICE_ID}/commands", commands)
+        print("TUYA RESPONSE:", result)
         return jsonify({"action": action, "ok": result.get("success")})
     except Exception as e:
         print("ERROR:", str(e))
