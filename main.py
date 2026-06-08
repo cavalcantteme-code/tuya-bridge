@@ -16,14 +16,23 @@ ENDPOINT      = os.environ.get("TUYA_ENDPOINT", "https://openapi.tuyaus.com")
 WEBHOOK_TOKEN = os.environ["WEBHOOK_TOKEN"]
 
 def _sign(secret, msg):
-    return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest().upper()
+    return hmac.new(
+        secret.encode("utf-8"),
+        msg.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest().upper()
 
 def get_token():
     t = str(int(time.time() * 1000))
     path = "/v1.0/token?grant_type=1"
-    sign = _sign(ACCESS_SECRET, f"{ACCESS_ID}{t}GET\n\n\n\n{path}")
-    headers = {"client_id": ACCESS_ID, "sign": sign,
-               "t": t, "sign_method": "HMAC-SHA256"}
+    string_to_sign = ACCESS_ID + t + "GET\n\n\n\n" + path
+    sign = _sign(ACCESS_SECRET, string_to_sign)
+    headers = {
+        "client_id": ACCESS_ID,
+        "sign": sign,
+        "t": t,
+        "sign_method": "HMAC-SHA256"
+    }
     r = requests.get(f"{ENDPOINT}{path}", headers=headers, timeout=8)
     data = r.json()
     print("TUYA TOKEN RESPONSE:", data)
@@ -35,14 +44,22 @@ def control_device(token, state):
     t = str(int(time.time() * 1000))
     path = f"/v1.0/devices/{DEVICE_ID}/commands"
     body = json.dumps({"commands": [{"code": "switch_1", "value": state}]})
-    h = hashlib.sha256(body.encode()).hexdigest()
-    sign = _sign(ACCESS_SECRET,
-        f"{ACCESS_ID}{token}{t}POST\n{h}\napplication/json\n\n{path}")
-    headers = {"client_id": ACCESS_ID, "access_token": token,
-               "sign": sign, "t": t, "sign_method": "HMAC-SHA256",
-               "Content-Type": "application/json"}
-    return requests.post(f"{ENDPOINT}{path}",
-                         headers=headers, data=body, timeout=8).json()
+    h = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    string_to_sign = (ACCESS_ID + token + t +
+                      "POST\n" + h + "\napplication/json\n\n" + path)
+    sign = _sign(ACCESS_SECRET, string_to_sign)
+    headers = {
+        "client_id": ACCESS_ID,
+        "access_token": token,
+        "sign": sign,
+        "t": t,
+        "sign_method": "HMAC-SHA256",
+        "Content-Type": "application/json"
+    }
+    r = requests.post(f"{ENDPOINT}{path}", headers=headers, data=body, timeout=8)
+    data = r.json()
+    print("TUYA CONTROL RESPONSE:", data)
+    return data
 
 @app.route("/plug/<action>", methods=["POST"])
 def plug_control(action):
@@ -55,6 +72,7 @@ def plug_control(action):
         result = control_device(token, action == "on")
         return jsonify({"action": action, "ok": result.get("success")})
     except Exception as e:
+        print("ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
