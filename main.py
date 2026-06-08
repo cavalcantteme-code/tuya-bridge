@@ -25,7 +25,11 @@ def get_token():
     headers = {"client_id": ACCESS_ID, "sign": sign,
                "t": t, "sign_method": "HMAC-SHA256"}
     r = requests.get(f"{ENDPOINT}{path}", headers=headers, timeout=8)
-    return r.json()["result"]["access_token"]
+    data = r.json()
+    print("TUYA TOKEN RESPONSE:", data)
+    if not data.get("success"):
+        raise RuntimeError(f"Token error: {data}")
+    return data["result"]["access_token"]
 
 def control_device(token, state):
     t = str(int(time.time() * 1000))
