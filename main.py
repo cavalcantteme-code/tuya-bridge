@@ -17,7 +17,7 @@ def get_api():
 
 @app.route("/plug/<action>", methods=["POST"])
 def plug_control(action):
-    if request.headers.get("X-Token") != WEBHOOK_TOKEN:
+    if request.headers.get("X-Token") != WEBHOOK_TOKEN and request.args.get("token") != WEBHOOK_TOKEN:
         return jsonify({"error": "unauthorized"}), 401
     if action not in ("on", "off"):
         return jsonify({"error": "use /on ou /off"}), 400
